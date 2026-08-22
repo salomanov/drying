@@ -64,7 +64,7 @@ struct ConfigData {
   int adcTol    = 70; // Допуск ± ADC
 
   // Источник температуры для экрана (0: AHT10, 1: DS18B20, 2: Оба (AHT+DS18), 3: Среднее)
-  int dispTempSource = 0;
+  uint8_t dispTempSource = 0;
 };
 
 ConfigData cfg;
@@ -953,10 +953,6 @@ void tickAHT10() {
 }
 
 void tickDS18() {
-  static uint32_t tmr = 0;
-  if (millis() - tmr < 1000) return;
-  tmr = millis();
-
   uint8_t dsState = ds18.tick();
   if (dsState == DS18_READY) {
     float raw = ds18.getTemp();
@@ -976,11 +972,14 @@ void tickDS18() {
 
     // Передаем отфильтрованное значение без шума квантования в автокалибровку!
     tickDsAutoCalib(filteredRawDs);
-    ds18.requestTemp();
   } else if (dsState == DS18_ERROR) {
+    static uint32_t lastDsErrorRecovery = 0;
+    if (millis() - lastDsErrorRecovery > 2000) {
+      lastDsErrorRecovery = millis();
+      ds18.reset();
+      ds18.requestTemp();
+    }
     ds18Ok = false;
-    tempDS18 = NAN;
-    ds18.requestTemp();
   }
 }
 
@@ -988,8 +987,9 @@ void tickDS18() {
 void buildLcdMenu(gm::Builder& b) {
   // Подменю 1: Датчики и экран
   b.Page(1, "Датчики", [](gm::Builder& b) {
-    b.Select("Экран", (uint8_t*)&cfg.dispTempSource, "AHT10;DS18;Оба;Ср.", [](uint8_t n, const char* str, uint8_t len) {
+    b.Select("Экран", &cfg.dispTempSource, "AHT10;DS18;Оба;Ср.", [](uint8_t n, const char* str, uint8_t len) {
       prefs.putInt("tempSrc", cfg.dispTempSource);
+      updateDisplayWindow();
     });
     b.ValueFloat("Сдвиг T", &cfg.tempOffset, -10.0f, 10.0f, 0.1f, 1, "C", [](float v) {
       prefs.putFloat("offset", cfg.tempOffset);
@@ -1586,59 +1586,54 @@ void updateDisplayWindow() {
         snprintf(line1, sizeof(line1), "--.--.--  %02d:%02d", hrs, mins);
       }
 
-      // СНИЗУ: УМНОЕ ОТОБРАЖЕНИЕ ДАТЧИКОВ ТЕМПЕРАТУРЫ И ВЛАЖНОСТИ
+      // СНИЗУ: ОТОБРАЖЕНИЕ ВЫБРАННОГО ДАТЧИКА (0: AHT10, 1: DS18B20, 2: Оба, 3: Среднее)
       bool hasHum = (climateOk && !isnan(currentHum) && currentHum > 0.0f);
       bool hasAhtTemp = (climateOk && !isnan(currentTemp));
       bool hasDsTemp = (ds18Ok && !isnan(tempDS18));
 
-      if (!hasHum) {
-        // ЕСЛИ ВЛАЖНОСТЬ 0 ИЛИ НЕДОСТУПНА:
-        if (hasAhtTemp && hasDsTemp) {
-          // 1. Доступны оба датчика температуры -> отображаем оба
-          snprintf(line2, sizeof(line2), "A:%.1fC  DS:%.1fC", currentTemp, tempDS18);
-        } else if (hasAhtTemp) {
-          // 2. Доступен только AHT10 -> отображаем его
-          snprintf(line2, sizeof(line2), "AHT10: %.1f C   ", currentTemp);
-        } else if (hasDsTemp) {
-          // 3. Доступен только DS18B20 -> отображаем его
-          snprintf(line2, sizeof(line2), "DS18B20: %.1f C ", tempDS18);
-        } else {
-          // 4. Оба датчика недоступны -> ничего не выводим
-          snprintf(line2, sizeof(line2), "                ");
-        }
-      } else {
-        // ЕСЛИ ВЛАЖНОСТЬ ЕСТЬ (>0%):
-        if (cfg.dispTempSource == 1) {
-          // Режим DS18B20
+      char humStr[8] = "--%";
+      if (hasHum) snprintf(humStr, sizeof(humStr), "%.0f%%", currentHum);
+
+      switch (cfg.dispTempSource) {
+        case 1: { // DS18B20 (Эталон)
           if (hasDsTemp) {
-            snprintf(line2, sizeof(line2), "DS:%.1fC   H:%.0f%%", tempDS18, currentHum);
-          } else if (hasAhtTemp) {
-            snprintf(line2, sizeof(line2), "T:%.1fC   H:%.0f%%", currentTemp, currentHum);
+            snprintf(line2, sizeof(line2), "DS:%.1fC  H:%s", tempDS18, humStr);
           } else {
-            snprintf(line2, sizeof(line2), "DS18:--.-  H:%.0f%%", currentHum);
+            snprintf(line2, sizeof(line2), "DS:--.-C  H:%s", humStr);
           }
-        } else if (cfg.dispTempSource == 2) {
-          // Режим оба датчика сразу
-          char tA[6] = "--.-";
-          char tD[6] = "--.-";
-          char h[4] = "--";
+          break;
+        }
+
+        case 2: { // Оба датчика сразу (AHT + DS)
+          char tA[7] = "--.-";
+          char tD[7] = "--.-";
           if (hasAhtTemp) snprintf(tA, sizeof(tA), "%.1f", currentTemp);
           if (hasDsTemp) snprintf(tD, sizeof(tD), "%.1f", tempDS18);
-          snprintf(h, sizeof(h), "%.0f", currentHum);
-          snprintf(line2, sizeof(line2), "A%s D%s H%s%%", tA, tD, h);
-        } else if (cfg.dispTempSource == 3) {
-          // Режим среднее
-          float avgT = (hasAhtTemp && hasDsTemp) ? (currentTemp + tempDS18) / 2.0f : (hasAhtTemp ? currentTemp : tempDS18);
-          snprintf(line2, sizeof(line2), "Ср:%.1fC   H:%.0f%%", avgT, currentHum);
-        } else {
-          // Режим AHT10 (По умолчанию)
-          if (hasAhtTemp) {
-            snprintf(line2, sizeof(line2), "T:%.1fC   H:%.0f%%", currentTemp, currentHum);
+          snprintf(line2, sizeof(line2), "A%s D%s H%s", tA, tD, humStr);
+          break;
+        }
+
+        case 3: { // Среднее арифметическое (AHT + DS)
+          if (hasAhtTemp && hasDsTemp) {
+            float avgT = (currentTemp + tempDS18) / 2.0f;
+            snprintf(line2, sizeof(line2), "Ср:%.1fC  H:%s", avgT, humStr);
+          } else if (hasAhtTemp) {
+            snprintf(line2, sizeof(line2), "Ср:%.1fC(A)H:%s", currentTemp, humStr);
           } else if (hasDsTemp) {
-            snprintf(line2, sizeof(line2), "DS:%.1fC   H:%.0f%%", tempDS18, currentHum);
+            snprintf(line2, sizeof(line2), "Ср:%.1fC(D)H:%s", tempDS18, humStr);
           } else {
-            snprintf(line2, sizeof(line2), "T:--.- C   H:%.0f%%", currentHum);
+            snprintf(line2, sizeof(line2), "Ср:--.-C  H:%s", humStr);
           }
+          break;
+        }
+
+        default: { // 0: AHT10 (Микроклимат)
+          if (hasAhtTemp) {
+            snprintf(line2, sizeof(line2), "AHT:%.1fC H:%s", currentTemp, humStr);
+          } else {
+            snprintf(line2, sizeof(line2), "AHT:--.-C H:%s", humStr);
+          }
+          break;
         }
       }
       break;
@@ -1799,6 +1794,10 @@ void setup() {
   initAHT10();
   tickAHT10();
 
+  pinMode(PIN_DS18B20, INPUT_PULLUP);
+  delay(50);
+  ds18.reset();
+  delay(20);
   ds18.setResolution(12);
   ds18.requestTemp();
 
