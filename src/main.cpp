@@ -65,7 +65,8 @@ ConfigData cfg;
 SettingsESP sett("Инкубатор & Сушка");
 
 bool ahtFound = false;
-int settingSubItem = 0; // 0 - Сдвиг T, 1 - Сдвиг H
+int settingSubItem = 0; // 0..5 пункты меню настроек
+bool settingEditMode = false; // true - режим правки числа
 
 float currentTemp = NAN;
 float currentHum = NAN;
@@ -1481,38 +1482,60 @@ void updateDisplayWindow() {
 
     case DISP_SETTINGS: {
       const char* srcNames[4] = {
-        "AHT10 (Климат) ",
+        "AHT10 (Климат)",
         "DS18B20(Эталон)",
-        "Оба (AHT + DS) ",
-        "Среднее(AHT+DS)"
+        "Оба (AHT + DS)",
+        "Ср. (AHT + DS)"
       };
       cfg.dispTempSource = constrain(cfg.dispTempSource, 0, 3);
 
-      switch (settingSubItem) {
-        case 0:
-          snprintf(line1, sizeof(line1), ">Датчик экрана: ");
-          snprintf(line2, sizeof(line2), " %s", srcNames[cfg.dispTempSource]);
-          break;
-        case 1:
-          snprintf(line1, sizeof(line1), ">Сдвиг T: %+.1fC ", cfg.tempOffset);
-          snprintf(line2, sizeof(line2), " Сдвиг H: %+.1f%% ", cfg.humOffset);
-          break;
-        case 2:
-          snprintf(line1, sizeof(line1), ">Сдвиг H: %+.1f%% ", cfg.humOffset);
-          snprintf(line2, sizeof(line2), " Сдвиг DS:%+.1fC ", calDsOffset);
-          break;
-        case 3:
-          snprintf(line1, sizeof(line1), ">Сдвиг DS:%+.1fC ", calDsOffset);
-          snprintf(line2, sizeof(line2), " Кал. DS (тело) ");
-          break;
-        case 4:
-          snprintf(line1, sizeof(line1), ">Кал. DS (тело) ");
-          snprintf(line2, sizeof(line2), " Нажми OK (Кал.)");
-          break;
-        case 5:
-          snprintf(line1, sizeof(line1), ">Кал. AHT по DS ");
-          snprintf(line2, sizeof(line2), " Нажми OK (Кал.)");
-          break;
+      if (!settingEditMode) {
+        // Режим навигации по пунктам настроек
+        switch (settingSubItem) {
+          case 0:
+            snprintf(line1, sizeof(line1), "1/6 Датчик экр.");
+            snprintf(line2, sizeof(line2), ">%-15s", srcNames[cfg.dispTempSource]);
+            break;
+          case 1:
+            snprintf(line1, sizeof(line1), "2/6 Сдвиг T(AHT)");
+            snprintf(line2, sizeof(line2), "> %+.1f °C      ", cfg.tempOffset);
+            break;
+          case 2:
+            snprintf(line1, sizeof(line1), "3/6 Сдвиг H(AHT)");
+            snprintf(line2, sizeof(line2), "> %+.1f %%      ", cfg.humOffset);
+            break;
+          case 3:
+            snprintf(line1, sizeof(line1), "4/6 Сдвиг DS18  ");
+            snprintf(line2, sizeof(line2), "> %+.1f °C      ", calDsOffset);
+            break;
+          case 4:
+            snprintf(line1, sizeof(line1), "5/6 Кал. DS18   ");
+            snprintf(line2, sizeof(line2), " Нажми OK(тело) ");
+            break;
+          case 5:
+            snprintf(line1, sizeof(line1), "6/6 Кал. AHT10  ");
+            snprintf(line2, sizeof(line2), " Нажми OK(по DS)");
+            break;
+        }
+      } else {
+        // Режим редактирования числового значения
+        switch (settingSubItem) {
+          case 1:
+            snprintf(line1, sizeof(line1), "Правка T (AHT)  ");
+            snprintf(line2, sizeof(line2), "[ %+.1f °C ] ◄/►", cfg.tempOffset);
+            break;
+          case 2:
+            snprintf(line1, sizeof(line1), "Правка H (AHT)  ");
+            snprintf(line2, sizeof(line2), "[ %+.1f %% ] ◄/►", cfg.humOffset);
+            break;
+          case 3:
+            snprintf(line1, sizeof(line1), "Правка DS18     ");
+            snprintf(line2, sizeof(line2), "[ %+.1f °C ] ◄/►", calDsOffset);
+            break;
+          default:
+            settingEditMode = false;
+            break;
+        }
       }
       break;
     }
@@ -1746,56 +1769,65 @@ void loop() {
       }
     }
     else if (currentDispMode == DISP_SETTINGS) {
-      if (currentBtn == BTN_CENTER) {
-        if (settingSubItem == 4) {
-          currentDispMode = DISP_CALIB_DS;
-          startDsCalib();
-        } else if (settingSubItem == 5) {
-          currentDispMode = DISP_CALIB_AHT;
-          startAhtCalib();
-        } else {
-          settingSubItem = (settingSubItem + 1) % 6;
-        }
-        updateDisplayWindow();
-      } else if (currentBtn == BTN_LEFT) {
-        if (settingSubItem == 0) {
-          if (cfg.dispTempSource > 0) cfg.dispTempSource--;
-          else cfg.dispTempSource = 3;
-          prefs.putInt("tempSrc", cfg.dispTempSource);
-        } else if (settingSubItem == 1) {
-          cfg.tempOffset -= 0.1f;
-          prefs.putFloat("offset", cfg.tempOffset);
-        } else if (settingSubItem == 2) {
-          cfg.humOffset -= 0.5f;
-          prefs.putFloat("humOffset", cfg.humOffset);
-        } else if (settingSubItem == 3) {
-          calDsOffset -= 0.1f;
-          prefs.putFloat("dsOffset", calDsOffset);
-        } else {
+      if (!settingEditMode) {
+        // Навигация по списку пунктов настроек (◄ / ► листают пункты 1..6)
+        if (currentBtn == BTN_LEFT) {
           if (settingSubItem > 0) settingSubItem--;
           else settingSubItem = 5;
-        }
-        updateDisplayWindow();
-      } else if (currentBtn == BTN_RIGHT) {
-        if (settingSubItem == 0) {
-          cfg.dispTempSource = (cfg.dispTempSource + 1) % 4;
-          prefs.putInt("tempSrc", cfg.dispTempSource);
-        } else if (settingSubItem == 1) {
-          cfg.tempOffset += 0.1f;
-          prefs.putFloat("offset", cfg.tempOffset);
-        } else if (settingSubItem == 2) {
-          cfg.humOffset += 0.5f;
-          prefs.putFloat("humOffset", cfg.humOffset);
-        } else if (settingSubItem == 3) {
-          calDsOffset += 0.1f;
-          prefs.putFloat("dsOffset", calDsOffset);
-        } else {
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_RIGHT) {
           settingSubItem = (settingSubItem + 1) % 6;
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_CENTER) {
+          if (settingSubItem == 0) {
+            // Переключаем датчик экрана по кругу (AHT10 -> DS18B20 -> Оба -> Среднее)
+            cfg.dispTempSource = (cfg.dispTempSource + 1) % 4;
+            prefs.putInt("tempSrc", cfg.dispTempSource);
+          } else if (settingSubItem == 1 || settingSubItem == 2 || settingSubItem == 3) {
+            // Вход в режим настройки числа
+            settingEditMode = true;
+          } else if (settingSubItem == 4) {
+            currentDispMode = DISP_CALIB_DS;
+            startDsCalib();
+          } else if (settingSubItem == 5) {
+            currentDispMode = DISP_CALIB_AHT;
+            startAhtCalib();
+          }
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_BACK) {
+          currentDispMode = DISP_MAIN;
+          updateDisplayWindow();
         }
-        updateDisplayWindow();
-      } else if (currentBtn == BTN_BACK) {
-        currentDispMode = DISP_MAIN;
-        updateDisplayWindow();
+      } else {
+        // Режим изменения значения (◄ / ► меняют число, OK/ESC выходят)
+        if (currentBtn == BTN_LEFT) {
+          if (settingSubItem == 1) {
+            cfg.tempOffset -= 0.1f;
+            prefs.putFloat("offset", cfg.tempOffset);
+          } else if (settingSubItem == 2) {
+            cfg.humOffset -= 0.5f;
+            prefs.putFloat("humOffset", cfg.humOffset);
+          } else if (settingSubItem == 3) {
+            calDsOffset -= 0.1f;
+            prefs.putFloat("dsOffset", calDsOffset);
+          }
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_RIGHT) {
+          if (settingSubItem == 1) {
+            cfg.tempOffset += 0.1f;
+            prefs.putFloat("offset", cfg.tempOffset);
+          } else if (settingSubItem == 2) {
+            cfg.humOffset += 0.5f;
+            prefs.putFloat("humOffset", cfg.humOffset);
+          } else if (settingSubItem == 3) {
+            calDsOffset += 0.1f;
+            prefs.putFloat("dsOffset", calDsOffset);
+          }
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_CENTER || currentBtn == BTN_BACK) {
+          settingEditMode = false;
+          updateDisplayWindow();
+        }
       }
     }
     else if (currentDispMode == DISP_CALIB_DS) {
