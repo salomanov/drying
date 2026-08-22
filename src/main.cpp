@@ -1479,30 +1479,43 @@ void updateDisplayWindow() {
       break;
     }
 
-    case DISP_SETTINGS:
+    case DISP_SETTINGS: {
+      const char* srcNames[4] = {
+        "AHT10 (Климат) ",
+        "DS18B20(Эталон)",
+        "Оба (AHT + DS) ",
+        "Среднее(AHT+DS)"
+      };
+      cfg.dispTempSource = constrain(cfg.dispTempSource, 0, 3);
+
       switch (settingSubItem) {
         case 0:
+          snprintf(line1, sizeof(line1), ">Датчик экрана: ");
+          snprintf(line2, sizeof(line2), " %s", srcNames[cfg.dispTempSource]);
+          break;
+        case 1:
           snprintf(line1, sizeof(line1), ">Сдвиг T: %+.1fC ", cfg.tempOffset);
           snprintf(line2, sizeof(line2), " Сдвиг H: %+.1f%% ", cfg.humOffset);
           break;
-        case 1:
+        case 2:
           snprintf(line1, sizeof(line1), ">Сдвиг H: %+.1f%% ", cfg.humOffset);
           snprintf(line2, sizeof(line2), " Сдвиг DS:%+.1fC ", calDsOffset);
           break;
-        case 2:
+        case 3:
           snprintf(line1, sizeof(line1), ">Сдвиг DS:%+.1fC ", calDsOffset);
           snprintf(line2, sizeof(line2), " Кал. DS (тело) ");
           break;
-        case 3:
+        case 4:
           snprintf(line1, sizeof(line1), ">Кал. DS (тело) ");
           snprintf(line2, sizeof(line2), " Нажми OK (Кал.)");
           break;
-        case 4:
+        case 5:
           snprintf(line1, sizeof(line1), ">Кал. AHT по DS ");
           snprintf(line2, sizeof(line2), " Нажми OK (Кал.)");
           break;
       }
       break;
+    }
 
     case DISP_CALIB_DS: {
       float liveDs = (!isnan(tempDS18)) ? tempDS18 : lastRawTemp;
@@ -1734,43 +1747,50 @@ void loop() {
     }
     else if (currentDispMode == DISP_SETTINGS) {
       if (currentBtn == BTN_CENTER) {
-        if (settingSubItem == 3) {
+        if (settingSubItem == 4) {
           currentDispMode = DISP_CALIB_DS;
           startDsCalib();
-        } else if (settingSubItem == 4) {
+        } else if (settingSubItem == 5) {
           currentDispMode = DISP_CALIB_AHT;
           startAhtCalib();
         } else {
-          settingSubItem = (settingSubItem + 1) % 5;
+          settingSubItem = (settingSubItem + 1) % 6;
         }
         updateDisplayWindow();
       } else if (currentBtn == BTN_LEFT) {
         if (settingSubItem == 0) {
+          if (cfg.dispTempSource > 0) cfg.dispTempSource--;
+          else cfg.dispTempSource = 3;
+          prefs.putInt("tempSrc", cfg.dispTempSource);
+        } else if (settingSubItem == 1) {
           cfg.tempOffset -= 0.1f;
           prefs.putFloat("offset", cfg.tempOffset);
-        } else if (settingSubItem == 1) {
+        } else if (settingSubItem == 2) {
           cfg.humOffset -= 0.5f;
           prefs.putFloat("humOffset", cfg.humOffset);
-        } else if (settingSubItem == 2) {
+        } else if (settingSubItem == 3) {
           calDsOffset -= 0.1f;
           prefs.putFloat("dsOffset", calDsOffset);
         } else {
           if (settingSubItem > 0) settingSubItem--;
-          else settingSubItem = 4;
+          else settingSubItem = 5;
         }
         updateDisplayWindow();
       } else if (currentBtn == BTN_RIGHT) {
         if (settingSubItem == 0) {
+          cfg.dispTempSource = (cfg.dispTempSource + 1) % 4;
+          prefs.putInt("tempSrc", cfg.dispTempSource);
+        } else if (settingSubItem == 1) {
           cfg.tempOffset += 0.1f;
           prefs.putFloat("offset", cfg.tempOffset);
-        } else if (settingSubItem == 1) {
+        } else if (settingSubItem == 2) {
           cfg.humOffset += 0.5f;
           prefs.putFloat("humOffset", cfg.humOffset);
-        } else if (settingSubItem == 2) {
+        } else if (settingSubItem == 3) {
           calDsOffset += 0.1f;
           prefs.putFloat("dsOffset", calDsOffset);
         } else {
-          settingSubItem = (settingSubItem + 1) % 5;
+          settingSubItem = (settingSubItem + 1) % 6;
         }
         updateDisplayWindow();
       } else if (currentBtn == BTN_BACK) {
