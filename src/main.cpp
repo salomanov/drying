@@ -1046,14 +1046,61 @@ void setupNTPTime() {
   Serial.printf("[NTP] Часовой пояс установлен: GMT+%d\n", cfg.gmtOffsetHours);
 }
 
+bool otaInProgress = false;
+
+void showOTAProgressLCD(int percent) {
+  static int lastPct = -1;
+  if (percent == lastPct) return;
+  lastPct = percent;
+
+  char bar[11];
+  int filled = (percent * 10) / 100;
+  filled = constrain(filled, 0, 10);
+  for (int i = 0; i < 10; i++) {
+    bar[i] = (i < filled) ? '=' : ' ';
+  }
+  bar[10] = '\0';
+
+  char line2[17];
+  snprintf(line2, sizeof(line2), "[%s] %3d%%", bar, percent);
+
+  lcd.setCursor(0, 0);
+  printCyrillicPadded("Обновление ПО...", 16);
+  lcd.setCursor(0, 1);
+  printCyrillicPadded(line2, 16);
+}
+
 void setupOTAOverNetwork() {
   ArduinoOTA.setHostname("Sushka-Incubator");
-  ArduinoOTA.onStart([]() { Serial.println("\n[OTA Network] Начало прошивки по сети..."); });
-  ArduinoOTA.onEnd([]() { Serial.println("\n[OTA Network] Прошивка успешно завершена!"); });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("[OTA] Прогресс: %u%%\r", (progress / (total / 100)));
+  ArduinoOTA.onStart([]() {
+    otaInProgress = true;
+    Serial.println("\n[OTA Network] Начало прошивки по сети...");
+    lcd.clear();
+    showOTAProgressLCD(0);
   });
-  ArduinoOTA.onError([](ota_error_t error) { Serial.printf("[OTA] Ошибка: %u\n", error); });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    int pct = (total > 0) ? (progress * 100) / total : 0;
+    Serial.printf("[OTA] Прогресс: %u%%\r", pct);
+    showOTAProgressLCD(pct);
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\n[OTA Network] Прошивка успешно завершена!");
+    lcd.setCursor(0, 0);
+    printCyrillicPadded("Прошивка OK!", 16);
+    lcd.setCursor(0, 1);
+    printCyrillicPadded("Перезагрузка...", 16);
+    delay(500);
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    otaInProgress = false;
+    Serial.printf("[OTA] Ошибка: %u\n", error);
+    lcd.setCursor(0, 0);
+    printCyrillicPadded("Сбой прошивки!", 16);
+    char buf[17];
+    snprintf(buf, sizeof(buf), "Код ошибки: %u", error);
+    lcd.setCursor(0, 1);
+    printCyrillicPadded(buf, 16);
+  });
   ArduinoOTA.begin();
   Serial.println("[OTA Network] Служба прошивки по воздуху (OTA) успешно активна.");
 }
@@ -1518,6 +1565,8 @@ void buildSettingsUI(sets::Builder& b) {
 
 // 🖥️ ОБНОВЛЕНИЕ ЭКРАНА LCD1602 (ГЛАВНАЯ СТРАНИЦА: ВВЕРХУ ДАТА И ВРЕМЯ, СНИЗУ ТЕМПЕРАТУРА!)
 void updateDisplayWindow() {
+  if (otaInProgress) return;
+
   char line1[65];
   char line2[65];
 
