@@ -937,7 +937,7 @@ void tickAHT10() {
         if (currentHum < 0.0f) currentHum = 0.0f;
         if (currentHum > 100.0f) currentHum = 100.0f;
         currentHum = roundf(currentHum * 10.0f) / 10.0f;
-        currentTemp = roundf(currentTemp * 10.0f) / 10.0f;
+        currentTemp = roundf(currentTemp * 100.0f) / 100.0f;
 
         // Автокалибровка AHT10 по DS18B20: передаем отфильтрованные сглаженные данные!
         tickAhtAutoCalib(filteredRawAhtTemp);
@@ -970,7 +970,7 @@ void tickDS18() {
 
     float filteredRawDs = tempFilter.filtered(raw);
     tempDS18 = filteredRawDs + calDsOffset;
-    tempDS18 = roundf(tempDS18 * 10.0f) / 10.0f;
+    tempDS18 = roundf(tempDS18 * 100.0f) / 100.0f;
     ds18Ok = true;
 
     // Передаем отфильтрованное значение без шума квантования в автокалибровку!
@@ -994,13 +994,13 @@ void buildLcdMenu(gm::Builder& b) {
       prefs.putInt("tempSrc", cfg.dispTempSource);
       updateDisplayWindow();
     });
-    b.ValueFloat("Сдвиг T", &cfg.tempOffset, -10.0f, 10.0f, 0.1f, 1, "C", [](float v) {
+    b.ValueFloat("Сдвиг T", &cfg.tempOffset, -10.0f, 10.0f, 0.01f, 2, "C", [](float v) {
       prefs.putFloat("offset", cfg.tempOffset);
     });
     b.ValueFloat("Сдвиг H", &cfg.humOffset, -20.0f, 20.0f, 0.5f, 1, "%", [](float v) {
       prefs.putFloat("humOffset", cfg.humOffset);
     });
-    b.ValueFloat("Сдвиг DS", &calDsOffset, -10.0f, 10.0f, 0.1f, 1, "C", [](float v) {
+    b.ValueFloat("Сдвиг DS", &calDsOffset, -10.0f, 10.0f, 0.01f, 2, "C", [](float v) {
       prefs.putFloat("dsOffset", calDsOffset);
     });
   });
@@ -1187,13 +1187,13 @@ void buildSettingsUI(sets::Builder& b) {
       b.LED("AHT10 (Климат)", ahtFound);
     }
     if (climateOk && !isnan(currentTemp)) {
-      b.Label("Температура AHT10", String(currentTemp, 1) + " °C");
+      b.Label("Температура AHT10", String(currentTemp, 2) + " °C");
       b.Label("Влажность AHT10", String(currentHum, 1) + " % (Сырая: " + String(lastRawHum, 1) + " %)");
     } else {
       b.Label("AHT10", "Ошибка чтения датчика");
     }
     if (ds18Ok && !isnan(tempDS18)) {
-      b.Label("Эталон DS18B20", String(tempDS18, 1) + " °C");
+      b.Label("Эталон DS18B20", String(tempDS18, 2) + " °C");
     } else {
       b.Label("Эталон DS18B20", "Не подключен / Ошибка");
     }
@@ -1610,41 +1610,41 @@ void updateDisplayWindow() {
       switch (cfg.dispTempSource) {
         case 1: { // DS18B20 (Эталон)
           if (hasDsTemp) {
-            snprintf(line2, sizeof(line2), "DS:%.1fC  H:%s", tempDS18, humStr);
+            snprintf(line2, sizeof(line2), "DS: %.2fC H:%s", tempDS18, humStr);
           } else {
-            snprintf(line2, sizeof(line2), "DS:--.-C  H:%s", humStr);
+            snprintf(line2, sizeof(line2), "DS: --.--C H:%s", humStr);
           }
           break;
         }
 
         case 2: { // Оба датчика сразу (AHT + DS)
-          char tA[7] = "--.-";
-          char tD[7] = "--.-";
-          if (hasAhtTemp) snprintf(tA, sizeof(tA), "%.1f", currentTemp);
-          if (hasDsTemp) snprintf(tD, sizeof(tD), "%.1f", tempDS18);
-          snprintf(line2, sizeof(line2), "A%s D%s H%s", tA, tD, humStr);
+          char tA[8] = "--.--";
+          char tD[8] = "--.--";
+          if (hasAhtTemp) snprintf(tA, sizeof(tA), "%.2f", currentTemp);
+          if (hasDsTemp) snprintf(tD, sizeof(tD), "%.2f", tempDS18);
+          snprintf(line2, sizeof(line2), "A:%s D:%s", tA, tD);
           break;
         }
 
         case 3: { // Среднее арифметическое (AHT + DS)
           if (hasAhtTemp && hasDsTemp) {
             float avgT = (currentTemp + tempDS18) / 2.0f;
-            snprintf(line2, sizeof(line2), "Ср:%.1fC  H:%s", avgT, humStr);
+            snprintf(line2, sizeof(line2), "Ср: %.2fC H:%s", avgT, humStr);
           } else if (hasAhtTemp) {
-            snprintf(line2, sizeof(line2), "Ср:%.1fC(A)H:%s", currentTemp, humStr);
+            snprintf(line2, sizeof(line2), "Ср:%.2fC(A)H:%s", currentTemp, humStr);
           } else if (hasDsTemp) {
-            snprintf(line2, sizeof(line2), "Ср:%.1fC(D)H:%s", tempDS18, humStr);
+            snprintf(line2, sizeof(line2), "Ср:%.2fC(D)H:%s", tempDS18, humStr);
           } else {
-            snprintf(line2, sizeof(line2), "Ср:--.-C  H:%s", humStr);
+            snprintf(line2, sizeof(line2), "Ср: --.--C H:%s", humStr);
           }
           break;
         }
 
         default: { // 0: AHT10 (Микроклимат)
           if (hasAhtTemp) {
-            snprintf(line2, sizeof(line2), "AHT:%.1fC H:%s", currentTemp, humStr);
+            snprintf(line2, sizeof(line2), "AHT:%.2fC H:%s", currentTemp, humStr);
           } else {
-            snprintf(line2, sizeof(line2), "AHT:--.-C H:%s", humStr);
+            snprintf(line2, sizeof(line2), "AHT:--.--C H:%s", humStr);
           }
           break;
         }
@@ -1698,11 +1698,11 @@ void updateDisplayWindow() {
       if (dsCalibState == 1) {
         snprintf(line1, sizeof(line1), "Кал. DS18 (тело)");
         if (liveDs < 35.0f) {
-          snprintf(line2, sizeof(line2), "Грей>35C: %.1fC", liveDs);
+          snprintf(line2, sizeof(line2), "Грей>35C:%.2fC", liveDs);
         } else if (dsCalibStableCount > 0) {
-          snprintf(line2, sizeof(line2), "T:%.1fC  %2d/60с", liveDs, dsCalibStableCount);
+          snprintf(line2, sizeof(line2), "T:%.2fC  %2d/60с", liveDs, dsCalibStableCount);
         } else {
-          snprintf(line2, sizeof(line2), "T:%.1fC  Ждем...", liveDs);
+          snprintf(line2, sizeof(line2), "T:%.2fC  Ждем...", liveDs);
         }
       } else if (dsCalibState == 2) {
         snprintf(line1, sizeof(line1), "DS18 Готово!");
@@ -1723,9 +1723,9 @@ void updateDisplayWindow() {
         if (!ds18Ok || isnan(tempDS18)) {
           snprintf(line2, sizeof(line2), "DS18B20 отключен");
         } else if (ahtCalibStableCount > 0) {
-          snprintf(line2, sizeof(line2), "D%.1f A%.1f %2dс", tempDS18, currentTemp, ahtCalibStableCount);
+          snprintf(line2, sizeof(line2), "D%.2f A%.2f", tempDS18, currentTemp);
         } else {
-          snprintf(line2, sizeof(line2), "D:%.1f  A:%.1f", tempDS18, currentTemp);
+          snprintf(line2, sizeof(line2), "D:%.2f  A:%.2f", tempDS18, currentTemp);
         }
       } else if (ahtCalibState == 2) {
         snprintf(line1, sizeof(line1), "AHT10 Готово!");
