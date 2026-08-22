@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-01T10:00:41.065Z",
+  "entries": [
+    "agent-squad\\alex",
+    "agent-squad\\luna",
+    "agent-squad\\mason",
+    "agent-squad\\max",
+    "agent-squad\\quinn",
+    "agent-squad\\rex",
+    "api-and-interface-design",
+    "architect-review",
+    "architecture-patterns",
+    "backend-dev-guidelines",
+    "brainstorming",
+    "codebase-design",
+    "docs",
+    "production-code-audit",
+    "systematic-debugging",
+    "ui-skills",
+    "unslop-file"
+  ]
+}
