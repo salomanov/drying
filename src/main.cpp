@@ -475,7 +475,7 @@ void autoConnectSavedAP() {
   WiFiConnector.connect(cfg.wifiSsid, cfg.wifiPass);
 }
 
-enum DisplayMode { DISP_MAIN, DISP_WIFI, DISP_SETTINGS };
+enum DisplayMode { DISP_MAIN, DISP_WIFI, DISP_SETTINGS, DISP_CALIB_DS, DISP_CALIB_AHT };
 DisplayMode currentDispMode = DISP_MAIN;
 
 // Таймеры
@@ -1480,14 +1480,76 @@ void updateDisplayWindow() {
     }
 
     case DISP_SETTINGS:
-      if (settingSubItem == 0) {
-        snprintf(line1, sizeof(line1), ">Сдвиг T: %+.1fC ", cfg.tempOffset);
-        snprintf(line2, sizeof(line2), " Сдвиг H: %+.1f%% ", cfg.humOffset);
-      } else {
-        snprintf(line1, sizeof(line1), " Сдвиг T: %+.1fC ", cfg.tempOffset);
-        snprintf(line2, sizeof(line2), ">Сдвиг H: %+.1f%% ", cfg.humOffset);
+      switch (settingSubItem) {
+        case 0:
+          snprintf(line1, sizeof(line1), ">Сдвиг T: %+.1fC ", cfg.tempOffset);
+          snprintf(line2, sizeof(line2), " Сдвиг H: %+.1f%% ", cfg.humOffset);
+          break;
+        case 1:
+          snprintf(line1, sizeof(line1), ">Сдвиг H: %+.1f%% ", cfg.humOffset);
+          snprintf(line2, sizeof(line2), " Сдвиг DS:%+.1fC ", calDsOffset);
+          break;
+        case 2:
+          snprintf(line1, sizeof(line1), ">Сдвиг DS:%+.1fC ", calDsOffset);
+          snprintf(line2, sizeof(line2), " Кал. DS (тело) ");
+          break;
+        case 3:
+          snprintf(line1, sizeof(line1), ">Кал. DS (тело) ");
+          snprintf(line2, sizeof(line2), " Нажми OK (Кал.)");
+          break;
+        case 4:
+          snprintf(line1, sizeof(line1), ">Кал. AHT по DS ");
+          snprintf(line2, sizeof(line2), " Нажми OK (Кал.)");
+          break;
       }
       break;
+
+    case DISP_CALIB_DS: {
+      float liveDs = (!isnan(tempDS18)) ? tempDS18 : lastRawTemp;
+      if (dsCalibState == 1) {
+        snprintf(line1, sizeof(line1), "Кал. DS18 (тело)");
+        if (liveDs < 35.0f) {
+          snprintf(line2, sizeof(line2), "Грей>35C: %.1fC", liveDs);
+        } else if (dsCalibStableCount > 0) {
+          snprintf(line2, sizeof(line2), "T:%.1fC  %2d/60с", liveDs, dsCalibStableCount);
+        } else {
+          snprintf(line2, sizeof(line2), "T:%.1fC  Ждем...", liveDs);
+        }
+      } else if (dsCalibState == 2) {
+        snprintf(line1, sizeof(line1), "DS18 Готово!");
+        snprintf(line2, sizeof(line2), "Сдвиг: %+.2fC", calDsOffset);
+      } else if (dsCalibState == 3) {
+        snprintf(line1, sizeof(line1), "Ошибка калибр.!");
+        snprintf(line2, sizeof(line2), "Таймаут >5 мин");
+      } else {
+        snprintf(line1, sizeof(line1), "Кал. DS18");
+        snprintf(line2, sizeof(line2), "Отменено");
+      }
+      break;
+    }
+
+    case DISP_CALIB_AHT: {
+      if (ahtCalibState == 1) {
+        snprintf(line1, sizeof(line1), "Кал. AHT по DS");
+        if (!ds18Ok || isnan(tempDS18)) {
+          snprintf(line2, sizeof(line2), "DS18B20 отключен");
+        } else if (ahtCalibStableCount > 0) {
+          snprintf(line2, sizeof(line2), "D%.1f A%.1f %2dс", tempDS18, currentTemp, ahtCalibStableCount);
+        } else {
+          snprintf(line2, sizeof(line2), "D:%.1f  A:%.1f", tempDS18, currentTemp);
+        }
+      } else if (ahtCalibState == 2) {
+        snprintf(line1, sizeof(line1), "AHT10 Готово!");
+        snprintf(line2, sizeof(line2), "Сдвиг: %+.2fC", cfg.tempOffset);
+      } else if (ahtCalibState == 3) {
+        snprintf(line1, sizeof(line1), "Ошибка калибр.!");
+        snprintf(line2, sizeof(line2), "Датчик не готов");
+      } else {
+        snprintf(line1, sizeof(line1), "Кал. AHT10");
+        snprintf(line2, sizeof(line2), "Отменено");
+      }
+      break;
+    }
   }
 
   lcd.setCursor(0, 0);
@@ -1618,6 +1680,14 @@ void loop() {
     wakeUpWiFi(); // Мгновенное пробуждение Wi-Fi при нажатии любой кнопки!
 
     if (currentBtn == BTN_MENU) {
+      if (currentDispMode == DISP_CALIB_DS && dsCalibState == 1) {
+        dsCalibState = 0;
+        dsCalibStatus = "Отменено пользователем";
+      }
+      if (currentDispMode == DISP_CALIB_AHT && ahtCalibState == 1) {
+        ahtCalibState = 0;
+        ahtCalibStatus = "Отменено пользователем";
+      }
       if (currentDispMode == DISP_MAIN) currentDispMode = DISP_WIFI;
       else if (currentDispMode == DISP_WIFI) currentDispMode = DISP_SETTINGS;
       else currentDispMode = DISP_MAIN;
@@ -1664,28 +1734,67 @@ void loop() {
     }
     else if (currentDispMode == DISP_SETTINGS) {
       if (currentBtn == BTN_CENTER) {
-        settingSubItem = (settingSubItem + 1) % 2;
+        if (settingSubItem == 3) {
+          currentDispMode = DISP_CALIB_DS;
+          startDsCalib();
+        } else if (settingSubItem == 4) {
+          currentDispMode = DISP_CALIB_AHT;
+          startAhtCalib();
+        } else {
+          settingSubItem = (settingSubItem + 1) % 5;
+        }
         updateDisplayWindow();
       } else if (currentBtn == BTN_LEFT) {
         if (settingSubItem == 0) {
           cfg.tempOffset -= 0.1f;
           prefs.putFloat("offset", cfg.tempOffset);
-        } else {
+        } else if (settingSubItem == 1) {
           cfg.humOffset -= 0.5f;
           prefs.putFloat("humOffset", cfg.humOffset);
+        } else if (settingSubItem == 2) {
+          calDsOffset -= 0.1f;
+          prefs.putFloat("dsOffset", calDsOffset);
+        } else {
+          if (settingSubItem > 0) settingSubItem--;
+          else settingSubItem = 4;
         }
         updateDisplayWindow();
       } else if (currentBtn == BTN_RIGHT) {
         if (settingSubItem == 0) {
           cfg.tempOffset += 0.1f;
           prefs.putFloat("offset", cfg.tempOffset);
-        } else {
+        } else if (settingSubItem == 1) {
           cfg.humOffset += 0.5f;
           prefs.putFloat("humOffset", cfg.humOffset);
+        } else if (settingSubItem == 2) {
+          calDsOffset += 0.1f;
+          prefs.putFloat("dsOffset", calDsOffset);
+        } else {
+          settingSubItem = (settingSubItem + 1) % 5;
         }
         updateDisplayWindow();
       } else if (currentBtn == BTN_BACK) {
         currentDispMode = DISP_MAIN;
+        updateDisplayWindow();
+      }
+    }
+    else if (currentDispMode == DISP_CALIB_DS) {
+      if (currentBtn == BTN_BACK || currentBtn == BTN_CENTER) {
+        if (dsCalibState == 1) {
+          dsCalibState = 0;
+          dsCalibStatus = "Отменено пользователем";
+        }
+        currentDispMode = DISP_SETTINGS;
+        updateDisplayWindow();
+      }
+    }
+    else if (currentDispMode == DISP_CALIB_AHT) {
+      if (currentBtn == BTN_BACK || currentBtn == BTN_CENTER) {
+        if (ahtCalibState == 1) {
+          ahtCalibState = 0;
+          ahtCalibStatus = "Отменено пользователем";
+        }
+        currentDispMode = DISP_SETTINGS;
         updateDisplayWindow();
       }
     }
