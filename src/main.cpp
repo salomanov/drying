@@ -986,10 +986,15 @@ void tickDS18() {
   }
 }
 
+uint8_t activeMenuPage = 0;
+
 // 📟 СТРУКТУРА ЭКРАННОГО МЕНЮ НА БАЗЕ GYVERMENU
 void buildLcdMenu(gm::Builder& b) {
+  activeMenuPage = 0;
+
   // Подменю 1: Датчики и экран
   b.Page(1, "Датчики", [](gm::Builder& b) {
+    activeMenuPage = 1;
     b.Select("Экран", &cfg.dispTempSource, "AHT10;DS18;Оба;Ср.", [](uint8_t n, const char* str, uint8_t len) {
       prefs.putInt("tempSrc", cfg.dispTempSource);
       updateDisplayWindow();
@@ -1007,6 +1012,7 @@ void buildLcdMenu(gm::Builder& b) {
 
   // Подменю 2: Автокалибровка
   b.Page(2, "Калибровка", [](gm::Builder& b) {
+    activeMenuPage = 2;
     b.Button("Кал. DS (тело)", []() {
       currentDispMode = DISP_CALIB_DS;
       startDsCalib();
@@ -1021,6 +1027,7 @@ void buildLcdMenu(gm::Builder& b) {
 
   // Подменю 3: Wi-Fi и Система
   b.Page(3, "Инфо/Сеть", [](gm::Builder& b) {
+    activeMenuPage = 3;
     if (WiFi.status() == WL_CONNECTED) {
       String ip = WiFi.localIP().toString();
       b.ValueStr("IP", ip.c_str());
@@ -1034,12 +1041,6 @@ void buildLcdMenu(gm::Builder& b) {
     uint32_t sec = millis() / 1000;
     snprintf(uptimeBuf, sizeof(uptimeBuf), "%02u:%02u:%02u", sec / 3600, (sec % 3600) / 60, sec % 60);
     b.ValueStr("Аптайм", uptimeBuf);
-  });
-
-  // Кнопка возврата на главный экран
-  b.Button("< Главный экран", []() {
-    currentDispMode = DISP_MAIN;
-    updateDisplayWindow();
   });
 }
 
@@ -2026,7 +2027,14 @@ void loop() {
       } else if (currentBtn == BTN_RIGHT) {
         menu.down();
       } else if (currentBtn == BTN_BACK) {
-        menu.back();
+        if (activeMenuPage == 0) {
+          // В корне меню: нажатие кнопки Назад возвращает на главный экран
+          currentDispMode = DISP_MAIN;
+          updateDisplayWindow();
+        } else {
+          // В подменю: нажатие кнопки Назад возвращает в корневое меню
+          menu.back();
+        }
       }
     }
     else if (currentDispMode == DISP_CALIB_DS) {
