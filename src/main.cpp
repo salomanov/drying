@@ -1604,49 +1604,81 @@ void updateDisplayWindow() {
       bool hasAhtTemp = (climateOk && !isnan(currentTemp));
       bool hasDsTemp = (ds18Ok && !isnan(tempDS18));
 
-      char humStr[8] = "--%";
-      if (hasHum) snprintf(humStr, sizeof(humStr), "%.0f%%", currentHum);
+      char tA[8] = "--.--";
+      char tD[8] = "--.--";
+      if (hasAhtTemp) snprintf(tA, sizeof(tA), "%.2f", currentTemp);
+      if (hasDsTemp) snprintf(tD, sizeof(tD), "%.2f", tempDS18);
 
-      switch (cfg.dispTempSource) {
-        case 1: { // DS18B20 (Эталон)
-          if (hasDsTemp) {
-            snprintf(line2, sizeof(line2), "DS: %.2fC H:%s", tempDS18, humStr);
-          } else {
-            snprintf(line2, sizeof(line2), "DS: --.--C H:%s", humStr);
+      if (hasHum) {
+        // ЕСТЬ ВЛАЖНОСТЬ (>0%): выводим температуру и влажность
+        char humStr[8];
+        snprintf(humStr, sizeof(humStr), "%.0f%%", currentHum);
+
+        switch (cfg.dispTempSource) {
+          case 1: { // DS18B20 (Эталон)
+            if (hasDsTemp) snprintf(line2, sizeof(line2), "DS: %.2fC H:%s", tempDS18, humStr);
+            else snprintf(line2, sizeof(line2), "DS: --.--C H:%s", humStr);
+            break;
           }
-          break;
-        }
 
-        case 2: { // Оба датчика сразу (AHT + DS)
-          char tA[8] = "--.--";
-          char tD[8] = "--.--";
-          if (hasAhtTemp) snprintf(tA, sizeof(tA), "%.2f", currentTemp);
-          if (hasDsTemp) snprintf(tD, sizeof(tD), "%.2f", tempDS18);
-          snprintf(line2, sizeof(line2), "A:%s D:%s", tA, tD);
-          break;
-        }
-
-        case 3: { // Среднее арифметическое (AHT + DS)
-          if (hasAhtTemp && hasDsTemp) {
-            float avgT = (currentTemp + tempDS18) / 2.0f;
-            snprintf(line2, sizeof(line2), "Ср: %.2fC H:%s", avgT, humStr);
-          } else if (hasAhtTemp) {
-            snprintf(line2, sizeof(line2), "Ср:%.2fC(A)H:%s", currentTemp, humStr);
-          } else if (hasDsTemp) {
-            snprintf(line2, sizeof(line2), "Ср:%.2fC(D)H:%s", tempDS18, humStr);
-          } else {
-            snprintf(line2, sizeof(line2), "Ср: --.--C H:%s", humStr);
+          case 2: { // Оба датчика сразу (AHT + DS)
+            snprintf(line2, sizeof(line2), "A:%s D:%s", tA, tD);
+            break;
           }
-          break;
-        }
 
-        default: { // 0: AHT10 (Микроклимат)
-          if (hasAhtTemp) {
-            snprintf(line2, sizeof(line2), "AHT:%.2fC H:%s", currentTemp, humStr);
-          } else {
-            snprintf(line2, sizeof(line2), "AHT:--.--C H:%s", humStr);
+          case 3: { // Среднее арифметическое (AHT + DS)
+            if (hasAhtTemp && hasDsTemp) {
+              float avgT = (currentTemp + tempDS18) / 2.0f;
+              snprintf(line2, sizeof(line2), "Ср: %.2fC H:%s", avgT, humStr);
+            } else if (hasAhtTemp) {
+              snprintf(line2, sizeof(line2), "Ср:%.2fC(A)H:%s", currentTemp, humStr);
+            } else if (hasDsTemp) {
+              snprintf(line2, sizeof(line2), "Ср:%.2fC(D)H:%s", tempDS18, humStr);
+            } else {
+              snprintf(line2, sizeof(line2), "Ср: --.--C H:%s", humStr);
+            }
+            break;
           }
-          break;
+
+          default: { // 0: AHT10 (Микроклимат)
+            if (hasAhtTemp) snprintf(line2, sizeof(line2), "AHT:%.2fC H:%s", currentTemp, humStr);
+            else snprintf(line2, sizeof(line2), "AHT:--.--C H:%s", humStr);
+            break;
+          }
+        }
+      } else {
+        // ВЛАЖНОСТЬ 0 ИЛИ НЕДОСТУПНА: влажность не отображаем совсем
+        switch (cfg.dispTempSource) {
+          case 1: { // DS18B20 (Эталон)
+            if (hasDsTemp) snprintf(line2, sizeof(line2), "DS18:   %.2f °C ", tempDS18);
+            else snprintf(line2, sizeof(line2), "DS18:   --.-- °C");
+            break;
+          }
+
+          case 2: { // Оба датчика сразу (AHT + DS)
+            snprintf(line2, sizeof(line2), "A:%s D:%s", tA, tD);
+            break;
+          }
+
+          case 3: { // Среднее арифметическое (AHT + DS)
+            if (hasAhtTemp && hasDsTemp) {
+              float avgT = (currentTemp + tempDS18) / 2.0f;
+              snprintf(line2, sizeof(line2), "Ср.Т:   %.2f °C ", avgT);
+            } else if (hasAhtTemp) {
+              snprintf(line2, sizeof(line2), "Ср.Т:  %.2f °C(A)", currentTemp);
+            } else if (hasDsTemp) {
+              snprintf(line2, sizeof(line2), "Ср.Т:  %.2f °C(D)", tempDS18);
+            } else {
+              snprintf(line2, sizeof(line2), "Ср.Т:   --.-- °C");
+            }
+            break;
+          }
+
+          default: { // 0: AHT10 (Микроклимат)
+            if (hasAhtTemp) snprintf(line2, sizeof(line2), "AHT10:  %.2f °C ", currentTemp);
+            else snprintf(line2, sizeof(line2), "AHT10:  --.-- °C");
+            break;
+          }
         }
       }
       break;
