@@ -1008,7 +1008,7 @@ void buildLcdMenu(gm::Builder& b) {
     b.ValueFloat("Сдвиг DS", &calDsOffset, -10.0f, 10.0f, 0.01f, 2, "C", [](float v) {
       prefs.putFloat("dsOffset", calDsOffset);
     });
-  });
+  }, false);
 
   // Подменю 2: Автокалибровка
   b.Page(2, "Калибровка", [](gm::Builder& b) {
@@ -1023,7 +1023,7 @@ void buildLcdMenu(gm::Builder& b) {
       startAhtCalib();
       updateDisplayWindow();
     });
-  });
+  }, false);
 
   // Подменю 3: Wi-Fi и Система
   b.Page(3, "Инфо/Сеть", [](gm::Builder& b) {
@@ -1041,7 +1041,7 @@ void buildLcdMenu(gm::Builder& b) {
     uint32_t sec = millis() / 1000;
     snprintf(uptimeBuf, sizeof(uptimeBuf), "%02u:%02u:%02u", sec / 3600, (sec % 3600) / 60, sec % 60);
     b.ValueStr("Аптайм", uptimeBuf);
-  });
+  }, false);
 }
 
 // ⏰ НАСТРОЙКА СИНХРОНИЗАЦИИ ЧАСОВОГО ПОЯСА GMT+5
