@@ -73,6 +73,9 @@ SettingsESP sett("Инкубатор & Сушка");
 bool ahtFound = false;
 int settingSubItem = 0; // 0..5 пункты меню настроек
 bool settingEditMode = false; // true - режим правки числа
+bool quickSensorSelect = false; // Режим быстрого выбора датчика на главном экране
+uint8_t origDispTempSource = 0; // Для отмены по кнопке Назад
+bool wifiSelectMode = false;    // Режим листания точек доступа на экране Wi-Fi
 
 float currentTemp = NAN;
 float currentHum = NAN;
@@ -1574,16 +1577,26 @@ void updateDisplayWindow() {
   bool timeValid = getLocalTime(&timeinfo);
   switch (currentDispMode) {
     case DISP_MAIN: {
-      // ВВЕРХУ: ДАТА И ВРЕМЯ (например: 18.08.26  04:05)
-      if (timeValid) {
-        snprintf(line1, sizeof(line1), "%02d.%02d.%02d  %02d:%02d", 
-                 timeinfo.tm_mday, timeinfo.tm_mon + 1, (timeinfo.tm_year + 1900) % 100,
-                 timeinfo.tm_hour, timeinfo.tm_min);
+      if (quickSensorSelect) {
+        // Режим интерактивного выбора датчиков на главном экране
+        switch (cfg.dispTempSource) {
+          case 1:  snprintf(line1, sizeof(line1), "◄ DS18B20 (2/4)►"); break;
+          case 2:  snprintf(line1, sizeof(line1), "◄ Оба A+DS(3/4)►"); break;
+          case 3:  snprintf(line1, sizeof(line1), "◄ Среднее (4/4)►"); break;
+          default: snprintf(line1, sizeof(line1), "◄ AHT10   (1/4)►"); break;
+        }
       } else {
-        uint32_t sec = millis() / 1000;
-        uint32_t mins = (sec / 60) % 60;
-        uint32_t hrs = (sec / 3600) % 24;
-        snprintf(line1, sizeof(line1), "--.--.--  %02d:%02d", hrs, mins);
+        // ВВЕРХУ: ДАТА И ВРЕМЯ (например: 18.08.26  04:05)
+        if (timeValid) {
+          snprintf(line1, sizeof(line1), "%02d.%02d.%02d  %02d:%02d", 
+                   timeinfo.tm_mday, timeinfo.tm_mon + 1, (timeinfo.tm_year + 1900) % 100,
+                   timeinfo.tm_hour, timeinfo.tm_min);
+        } else {
+          uint32_t sec = millis() / 1000;
+          uint32_t mins = (sec / 60) % 60;
+          uint32_t hrs = (sec / 3600) % 24;
+          snprintf(line1, sizeof(line1), "--.--.--  %02d:%02d", hrs, mins);
+        }
       }
 
       // СНИЗУ: ОТОБРАЖЕНИЕ ВЫБРАННОГО ДАТЧИКА (0: AHT10, 1: DS18B20, 2: Оба, 3: Среднее)
@@ -1646,28 +1659,31 @@ void updateDisplayWindow() {
         break;
       }
 
-      if (savedApsCount > 0) {
-        selectedSavedApIndex = constrain(selectedSavedApIndex, 0, savedApsCount - 1);
-        bool isActive = (strcmp(cfg.wifiSsid, savedAPs[selectedSavedApIndex].ssid) == 0 && WiFi.status() == WL_CONNECTED);
-        snprintf(line1, sizeof(line1), "%c%d/%d %s", isActive ? '*' : '>', selectedSavedApIndex + 1, savedApsCount, savedAPs[selectedSavedApIndex].ssid);
+      if (wifiSelectMode) {
+        // Режим листания сохраненных точек доступа
+        if (savedApsCount > 0) {
+          selectedSavedApIndex = constrain(selectedSavedApIndex, 0, savedApsCount - 1);
+          snprintf(line1, sizeof(line1), "> %d/%d %s", selectedSavedApIndex + 1, savedApsCount, savedAPs[selectedSavedApIndex].ssid);
+          snprintf(line2, sizeof(line2), "[OK:Подкл ESC:Отм]");
+        } else {
+          snprintf(line1, sizeof(line1), "Нет сохр. сетей ");
+          snprintf(line2, sizeof(line2), "[ESC: Назад]    ");
+        }
       } else {
+        // Обычный экран Wi-Fi: текущая точка и IP адрес
         if (WiFi.status() == WL_CONNECTED) {
-          snprintf(line1, sizeof(line1), "Wi-Fi: Подключен");
+          snprintf(line1, sizeof(line1), "Wi-Fi: %s", cfg.wifiSsid);
+          String ip = WiFi.localIP().toString();
+          if (ip.length() <= 12) {
+            snprintf(line2, sizeof(line2), "IP: %s", ip.c_str());
+          } else {
+            snprintf(line2, sizeof(line2), "IP:%s", ip.c_str());
+          }
         } else {
           snprintf(line1, sizeof(line1), "AP: Incubator");
+          String apIp = WiFi.softAPIP().toString();
+          snprintf(line2, sizeof(line2), "IP: %s", apIp.c_str());
         }
-      }
-
-      if (WiFi.status() == WL_CONNECTED) {
-        String ip = WiFi.localIP().toString();
-        if (ip.length() <= 12) {
-          snprintf(line2, sizeof(line2), "IP: %s", ip.c_str());
-        } else {
-          snprintf(line2, sizeof(line2), "IP:%s", ip.c_str());
-        }
-      } else {
-        String apIp = WiFi.softAPIP().toString();
-        snprintf(line2, sizeof(line2), "AP: %s", apIp.c_str());
       }
       break;
     }
@@ -1879,48 +1895,95 @@ void loop() {
         ahtCalibState = 0;
         ahtCalibStatus = "Отменено пользователем";
       }
-      if (currentDispMode == DISP_MAIN) currentDispMode = DISP_WIFI;
-      else if (currentDispMode == DISP_WIFI) currentDispMode = DISP_SETTINGS;
-      else currentDispMode = DISP_MAIN;
+      quickSensorSelect = false;
+      wifiSelectMode = false;
+
+      if (currentDispMode != DISP_SETTINGS) {
+        currentDispMode = DISP_SETTINGS;
+        menu.home();
+      } else {
+        currentDispMode = DISP_MAIN;
+      }
       updateDisplayWindow();
     } 
     else if (currentDispMode == DISP_MAIN) {
-      if (currentBtn == BTN_RIGHT) {
-        currentDispMode = DISP_WIFI;
-        updateDisplayWindow();
-      } else if (currentBtn == BTN_LEFT) {
-        currentDispMode = DISP_SETTINGS;
-        updateDisplayWindow();
-      } else if (currentBtn == BTN_CENTER) {
-        currentDispMode = DISP_WIFI;
-        updateDisplayWindow();
+      if (quickSensorSelect) {
+        // Режим интерактивного перелистывания режимов датчиков (◄ / ► сразу меняют и показывают)
+        if (currentBtn == BTN_RIGHT) {
+          cfg.dispTempSource = (cfg.dispTempSource + 1) % 4;
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_LEFT) {
+          if (cfg.dispTempSource > 0) cfg.dispTempSource--;
+          else cfg.dispTempSource = 3;
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_CENTER) {
+          // Кнопка ЦЕНТР: фиксирует и сохраняет выбранный режим
+          prefs.putInt("tempSrc", cfg.dispTempSource);
+          quickSensorSelect = false;
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_BACK) {
+          // Кнопка НАЗАД: отменяет выбор и возвращает прежний режим
+          cfg.dispTempSource = origDispTempSource;
+          quickSensorSelect = false;
+          updateDisplayWindow();
+        }
+      } else {
+        // Обычный режим Главного экрана
+        if (currentBtn == BTN_RIGHT) {
+          // ВПРАВО: переход на экран Wi-Fi (текущая точка и IP)
+          currentDispMode = DISP_WIFI;
+          wifiSelectMode = false;
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_CENTER) {
+          // ЦЕНТР: вход в интерактивный режим выбора датчиков
+          origDispTempSource = cfg.dispTempSource;
+          quickSensorSelect = true;
+          updateDisplayWindow();
+        }
       }
     }
     else if (currentDispMode == DISP_WIFI) {
-      if (currentBtn == BTN_RIGHT) {
-        if (savedApsCount > 0) {
-          selectedSavedApIndex = (selectedSavedApIndex + 1) % savedApsCount;
+      if (wifiSelectMode) {
+        // Режим выбора точки доступа из списка
+        if (currentBtn == BTN_RIGHT) {
+          if (savedApsCount > 0) {
+            selectedSavedApIndex = (selectedSavedApIndex + 1) % savedApsCount;
+            updateDisplayWindow();
+          }
+        } else if (currentBtn == BTN_LEFT) {
+          if (savedApsCount > 0) {
+            if (selectedSavedApIndex > 0) selectedSavedApIndex--;
+            else selectedSavedApIndex = savedApsCount - 1;
+            updateDisplayWindow();
+          }
+        } else if (currentBtn == BTN_CENTER) {
+          // ЦЕНТР: подключаемся к выбранной сети
+          if (savedApsCount > 0) {
+            selectedSavedApIndex = constrain(selectedSavedApIndex, 0, savedApsCount - 1);
+            snprintf(cfg.wifiSsid, sizeof(cfg.wifiSsid), "%s", savedAPs[selectedSavedApIndex].ssid);
+            snprintf(cfg.wifiPass, sizeof(cfg.wifiPass), "%s", savedAPs[selectedSavedApIndex].pass);
+            prefs.putString("ssid", cfg.wifiSsid);
+            prefs.putString("pass", cfg.wifiPass);
+            WiFiConnector.connect(cfg.wifiSsid, cfg.wifiPass);
+          }
+          wifiSelectMode = false;
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_BACK) {
+          // НАЗАД: отмена выбора точки доступа
+          wifiSelectMode = false;
           updateDisplayWindow();
         }
-      } else if (currentBtn == BTN_LEFT) {
-        if (savedApsCount > 0) {
-          if (selectedSavedApIndex > 0) selectedSavedApIndex--;
-          else selectedSavedApIndex = savedApsCount - 1;
+      } else {
+        // Обычный экран Wi-Fi: текущая точка и IP адрес
+        if (currentBtn == BTN_CENTER) {
+          // ЦЕНТР: вход в режим листания сохраненных точек доступа
+          wifiSelectMode = true;
+          updateDisplayWindow();
+        } else if (currentBtn == BTN_LEFT || currentBtn == BTN_BACK) {
+          // ВЛЕВО / НАЗАД: возврат на Главный экран
+          currentDispMode = DISP_MAIN;
           updateDisplayWindow();
         }
-      } else if (currentBtn == BTN_CENTER) {
-        if (savedApsCount > 0) {
-          selectedSavedApIndex = constrain(selectedSavedApIndex, 0, savedApsCount - 1);
-          snprintf(cfg.wifiSsid, sizeof(cfg.wifiSsid), "%s", savedAPs[selectedSavedApIndex].ssid);
-          snprintf(cfg.wifiPass, sizeof(cfg.wifiPass), "%s", savedAPs[selectedSavedApIndex].pass);
-          prefs.putString("ssid", cfg.wifiSsid);
-          prefs.putString("pass", cfg.wifiPass);
-          WiFiConnector.connect(cfg.wifiSsid, cfg.wifiPass);
-          updateDisplayWindow();
-        }
-      } else if (currentBtn == BTN_BACK) {
-        currentDispMode = DISP_MAIN;
-        updateDisplayWindow();
       }
     }
     else if (currentDispMode == DISP_SETTINGS) {
