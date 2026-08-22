@@ -10,6 +10,7 @@
 #include <Adafruit_AHTX0.h>
 #include <GyverFilters.h>
 #include <GyverButton.h>
+#include <GyverMenu.h>
 #include "time.h"
 
 #include "soc/soc.h"
@@ -32,6 +33,11 @@ LiquidCrystal lcd(PIN_RS, PIN_E, PIN_D4, PIN_D5, PIN_D6, PIN_D7);
 Preferences prefs;
 GyverDS18Single ds18(PIN_DS18B20);
 Adafruit_AHTX0 aht;
+GyverMenu menu(16, 2);
+void buildLcdMenu(gm::Builder& b);
+void printCyrillicChar(uint8_t c);
+void startDsCalib();
+void startAhtCalib();
 
 // --- ФИЛЬТРЫ GYVERFILTERS ДЛЯ СГЛАЖИВАНИЯ ДАТЧИКОВ (Running Average + Median) ---
 GFilterRA tempFilter(0.1f);
@@ -578,6 +584,92 @@ void printCyrillicPadded(const char* str, uint8_t width = 16) {
   }
 }
 
+void printCyrillicChar(uint8_t c) {
+  static uint8_t prevByte = 0;
+  if (prevByte == 0xD0 || prevByte == 0xD1 || prevByte == 0xC2) {
+    uint16_t unicode = ((uint16_t)prevByte << 8) | c;
+    prevByte = 0;
+    uint8_t outChar = '?';
+    switch (unicode) {
+      case 0xC2B0: outChar = 0xDF; break; // °
+      case 0xD081: outChar = 0xCB; break; // Ё
+      case 0xD191: outChar = 0xEB; break; // ё
+      case 0xD090: outChar = 'A';  break;
+      case 0xD091: outChar = 0x80; break;
+      case 0xD092: outChar = 'B';  break;
+      case 0xD093: outChar = 0x81; break;
+      case 0xD094: outChar = 0x82; break;
+      case 0xD095: outChar = 'E';  break;
+      case 0xD096: outChar = 0x83; break;
+      case 0xD097: outChar = 0x92; break;
+      case 0xD098: outChar = 0x84; break;
+      case 0xD099: outChar = 0x85; break;
+      case 0xD09A: outChar = 'K';  break;
+      case 0xD09B: outChar = 0x86; break;
+      case 0xD09C: outChar = 'M';  break;
+      case 0xD09D: outChar = 'H';  break;
+      case 0xD09E: outChar = 'O';  break;
+      case 0xD09F: outChar = 0x87; break;
+      case 0xD0A0: outChar = 'P';  break;
+      case 0xD0A1: outChar = 'C';  break;
+      case 0xD0A2: outChar = 'T';  break;
+      case 0xD0A3: outChar = 0x93; break;
+      case 0xD0A4: outChar = 0x88; break;
+      case 0xD0A5: outChar = 'X';  break;
+      case 0xD0A6: outChar = 0x89; break;
+      case 0xD0A7: outChar = 0x8A; break;
+      case 0xD0A8: outChar = 0x8B; break;
+      case 0xD0A9: outChar = 0x8C; break;
+      case 0xD0AA: outChar = 0x8D; break;
+      case 0xD0AB: outChar = 0x8E; break;
+      case 0xD0AC: outChar = 'b';  break;
+      case 0xD0AD: outChar = 0x8F; break;
+      case 0xD0AE: outChar = 0x90; break;
+      case 0xD0AF: outChar = 0x91; break;
+
+      case 0xD0B0: outChar = 'a';  break;
+      case 0xD0B1: outChar = 0xA0; break;
+      case 0xD0B2: outChar = 0xB5; break;
+      case 0xD0B3: outChar = 0xA1; break;
+      case 0xD0B4: outChar = 0xA2; break;
+      case 0xD0B5: outChar = 'e';  break;
+      case 0xD0B6: outChar = 0xA3; break;
+      case 0xD0B7: outChar = 0xB2; break;
+      case 0xD0B8: outChar = 0xA4; break;
+      case 0xD0B9: outChar = 0xA5; break;
+      case 0xD0BA: outChar = 0xB6; break;
+      case 0xD0BB: outChar = 0xA6; break;
+      case 0xD0BC: outChar = 0xB7; break;
+      case 0xD0BD: outChar = 0xB8; break;
+      case 0xD0BE: outChar = 'o';  break;
+      case 0xD0BF: outChar = 0xA7; break;
+      case 0xD180: outChar = 'p';  break;
+      case 0xD181: outChar = 'c';  break;
+      case 0xD182: outChar = 0xB9; break;
+      case 0xD183: outChar = 0xB3; break;
+      case 0xD184: outChar = 0xA8; break;
+      case 0xD185: outChar = 'x';  break;
+      case 0xD186: outChar = 0xA9; break;
+      case 0xD187: outChar = 0xAA; break;
+      case 0xD188: outChar = 0xAB; break;
+      case 0xD189: outChar = 0xAC; break;
+      case 0xD18A: outChar = 0xAD; break;
+      case 0xD18B: outChar = 0xAE; break;
+      case 0xD18C: outChar = 0xB4; break;
+      case 0xD18D: outChar = 0xAF; break;
+      case 0xD18E: outChar = 0xB0; break;
+      case 0xD18F: outChar = 0xB1; break;
+      default: outChar = '?'; break;
+    }
+    lcd.write(outChar);
+  } else if (c == 0xD0 || c == 0xD1 || c == 0xC2) {
+    prevByte = c;
+  } else {
+    lcd.write(c);
+  }
+}
+
+
 void initAHT10() {
   Wire.beginTransmission(AHT10_I2C_ADDR);
   Wire.write(0xBA); // Soft reset
@@ -890,6 +982,62 @@ void tickDS18() {
     tempDS18 = NAN;
     ds18.requestTemp();
   }
+}
+
+// 📟 СТРУКТУРА ЭКРАННОГО МЕНЮ НА БАЗЕ GYVERMENU
+void buildLcdMenu(gm::Builder& b) {
+  // Подменю 1: Датчики и экран
+  b.Page(1, "Датчики", [](gm::Builder& b) {
+    b.Select("Экран", (uint8_t*)&cfg.dispTempSource, "AHT10;DS18;Оба;Ср.", [](uint8_t n, const char* str, uint8_t len) {
+      prefs.putInt("tempSrc", cfg.dispTempSource);
+    });
+    b.ValueFloat("Сдвиг T", &cfg.tempOffset, -10.0f, 10.0f, 0.1f, 1, "C", [](float v) {
+      prefs.putFloat("offset", cfg.tempOffset);
+    });
+    b.ValueFloat("Сдвиг H", &cfg.humOffset, -20.0f, 20.0f, 0.5f, 1, "%", [](float v) {
+      prefs.putFloat("humOffset", cfg.humOffset);
+    });
+    b.ValueFloat("Сдвиг DS", &calDsOffset, -10.0f, 10.0f, 0.1f, 1, "C", [](float v) {
+      prefs.putFloat("dsOffset", calDsOffset);
+    });
+  });
+
+  // Подменю 2: Автокалибровка
+  b.Page(2, "Калибровка", [](gm::Builder& b) {
+    b.Button("Кал. DS (тело)", []() {
+      currentDispMode = DISP_CALIB_DS;
+      startDsCalib();
+      updateDisplayWindow();
+    });
+    b.Button("Кал. AHT по DS", []() {
+      currentDispMode = DISP_CALIB_AHT;
+      startAhtCalib();
+      updateDisplayWindow();
+    });
+  });
+
+  // Подменю 3: Wi-Fi и Система
+  b.Page(3, "Инфо/Сеть", [](gm::Builder& b) {
+    if (WiFi.status() == WL_CONNECTED) {
+      String ip = WiFi.localIP().toString();
+      b.ValueStr("IP", ip.c_str());
+      char rssiBuf[12];
+      snprintf(rssiBuf, sizeof(rssiBuf), "%d dBm", WiFi.RSSI());
+      b.ValueStr("Сигнал", rssiBuf);
+    } else {
+      b.ValueStr("Wi-Fi", "AP:Incubator");
+    }
+    char uptimeBuf[12];
+    uint32_t sec = millis() / 1000;
+    snprintf(uptimeBuf, sizeof(uptimeBuf), "%02u:%02u:%02u", sec / 3600, (sec % 3600) / 60, sec % 60);
+    b.ValueStr("Аптайм", uptimeBuf);
+  });
+
+  // Кнопка возврата на главный экран
+  b.Button("< Главный экран", []() {
+    currentDispMode = DISP_MAIN;
+    updateDisplayWindow();
+  });
 }
 
 // ⏰ НАСТРОЙКА СИНХРОНИЗАЦИИ ЧАСОВОГО ПОЯСА GMT+5
@@ -1481,63 +1629,8 @@ void updateDisplayWindow() {
     }
 
     case DISP_SETTINGS: {
-      const char* srcNames[4] = {
-        "AHT10 (Климат)",
-        "DS18B20(Эталон)",
-        "Оба (AHT + DS)",
-        "Ср. (AHT + DS)"
-      };
-      cfg.dispTempSource = constrain(cfg.dispTempSource, 0, 3);
-
-      if (!settingEditMode) {
-        // Режим навигации по пунктам настроек
-        switch (settingSubItem) {
-          case 0:
-            snprintf(line1, sizeof(line1), "1/6 Датчик экр.");
-            snprintf(line2, sizeof(line2), ">%-15s", srcNames[cfg.dispTempSource]);
-            break;
-          case 1:
-            snprintf(line1, sizeof(line1), "2/6 Сдвиг T(AHT)");
-            snprintf(line2, sizeof(line2), "> %+.1f °C      ", cfg.tempOffset);
-            break;
-          case 2:
-            snprintf(line1, sizeof(line1), "3/6 Сдвиг H(AHT)");
-            snprintf(line2, sizeof(line2), "> %+.1f %%      ", cfg.humOffset);
-            break;
-          case 3:
-            snprintf(line1, sizeof(line1), "4/6 Сдвиг DS18  ");
-            snprintf(line2, sizeof(line2), "> %+.1f °C      ", calDsOffset);
-            break;
-          case 4:
-            snprintf(line1, sizeof(line1), "5/6 Кал. DS18   ");
-            snprintf(line2, sizeof(line2), " Нажми OK(тело) ");
-            break;
-          case 5:
-            snprintf(line1, sizeof(line1), "6/6 Кал. AHT10  ");
-            snprintf(line2, sizeof(line2), " Нажми OK(по DS)");
-            break;
-        }
-      } else {
-        // Режим редактирования числового значения
-        switch (settingSubItem) {
-          case 1:
-            snprintf(line1, sizeof(line1), "Правка T (AHT)  ");
-            snprintf(line2, sizeof(line2), "[ %+.1f °C ] ◄/►", cfg.tempOffset);
-            break;
-          case 2:
-            snprintf(line1, sizeof(line1), "Правка H (AHT)  ");
-            snprintf(line2, sizeof(line2), "[ %+.1f %% ] ◄/►", cfg.humOffset);
-            break;
-          case 3:
-            snprintf(line1, sizeof(line1), "Правка DS18     ");
-            snprintf(line2, sizeof(line2), "[ %+.1f °C ] ◄/►", calDsOffset);
-            break;
-          default:
-            settingEditMode = false;
-            break;
-        }
-      }
-      break;
+      menu.refresh();
+      return;
     }
 
     case DISP_CALIB_DS: {
@@ -1635,6 +1728,20 @@ void setup() {
   lcd.begin(16, 2);
   delay(50);
   lcd.clear();
+
+  menu.setBackSign("< Назад");
+  menu.onPrint([](const char* str, size_t len) {
+    if (!str) return;
+    for (size_t i = 0; i < len; i++) {
+      printCyrillicChar((uint8_t)str[i]);
+    }
+  });
+  menu.onCursor([](uint8_t row, bool chosen, bool active) -> uint8_t {
+    lcd.setCursor(0, row);
+    lcd.write(chosen ? (active ? 0xFF : '>') : ' ');
+    return 1;
+  });
+  menu.onBuild(buildLcdMenu);
 
   Wire.begin(21, 22);
   Wire.setClock(100000);
@@ -1769,65 +1876,14 @@ void loop() {
       }
     }
     else if (currentDispMode == DISP_SETTINGS) {
-      if (!settingEditMode) {
-        // Навигация по списку пунктов настроек (◄ / ► листают пункты 1..6)
-        if (currentBtn == BTN_LEFT) {
-          if (settingSubItem > 0) settingSubItem--;
-          else settingSubItem = 5;
-          updateDisplayWindow();
-        } else if (currentBtn == BTN_RIGHT) {
-          settingSubItem = (settingSubItem + 1) % 6;
-          updateDisplayWindow();
-        } else if (currentBtn == BTN_CENTER) {
-          if (settingSubItem == 0) {
-            // Переключаем датчик экрана по кругу (AHT10 -> DS18B20 -> Оба -> Среднее)
-            cfg.dispTempSource = (cfg.dispTempSource + 1) % 4;
-            prefs.putInt("tempSrc", cfg.dispTempSource);
-          } else if (settingSubItem == 1 || settingSubItem == 2 || settingSubItem == 3) {
-            // Вход в режим настройки числа
-            settingEditMode = true;
-          } else if (settingSubItem == 4) {
-            currentDispMode = DISP_CALIB_DS;
-            startDsCalib();
-          } else if (settingSubItem == 5) {
-            currentDispMode = DISP_CALIB_AHT;
-            startAhtCalib();
-          }
-          updateDisplayWindow();
-        } else if (currentBtn == BTN_BACK) {
-          currentDispMode = DISP_MAIN;
-          updateDisplayWindow();
-        }
-      } else {
-        // Режим изменения значения (◄ / ► меняют число, OK/ESC выходят)
-        if (currentBtn == BTN_LEFT) {
-          if (settingSubItem == 1) {
-            cfg.tempOffset -= 0.1f;
-            prefs.putFloat("offset", cfg.tempOffset);
-          } else if (settingSubItem == 2) {
-            cfg.humOffset -= 0.5f;
-            prefs.putFloat("humOffset", cfg.humOffset);
-          } else if (settingSubItem == 3) {
-            calDsOffset -= 0.1f;
-            prefs.putFloat("dsOffset", calDsOffset);
-          }
-          updateDisplayWindow();
-        } else if (currentBtn == BTN_RIGHT) {
-          if (settingSubItem == 1) {
-            cfg.tempOffset += 0.1f;
-            prefs.putFloat("offset", cfg.tempOffset);
-          } else if (settingSubItem == 2) {
-            cfg.humOffset += 0.5f;
-            prefs.putFloat("humOffset", cfg.humOffset);
-          } else if (settingSubItem == 3) {
-            calDsOffset += 0.1f;
-            prefs.putFloat("dsOffset", calDsOffset);
-          }
-          updateDisplayWindow();
-        } else if (currentBtn == BTN_CENTER || currentBtn == BTN_BACK) {
-          settingEditMode = false;
-          updateDisplayWindow();
-        }
+      if (currentBtn == BTN_CENTER) {
+        menu.set();
+      } else if (currentBtn == BTN_LEFT) {
+        menu.up();
+      } else if (currentBtn == BTN_RIGHT) {
+        menu.down();
+      } else if (currentBtn == BTN_BACK) {
+        menu.back();
       }
     }
     else if (currentDispMode == DISP_CALIB_DS) {
@@ -1857,6 +1913,8 @@ void loop() {
   }
 
   if (tempUpdateTimer.isReady()) {
-    updateDisplayWindow();
+    if (currentDispMode != DISP_SETTINGS) {
+      updateDisplayWindow();
+    }
   }
 }
