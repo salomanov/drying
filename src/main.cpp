@@ -999,13 +999,13 @@ void buildLcdMenu(gm::Builder& b) {
       prefs.putInt("tempSrc", cfg.dispTempSource);
       updateDisplayWindow();
     });
-    b.ValueFloat("Сдвиг T", &cfg.tempOffset, -10.0f, 10.0f, 0.01f, 2, "C", [](float v) {
+    b.Float("Сдвиг T", &cfg.tempOffset, -10.0f, 10.0f, 0.01f, 2, "C", [](float v) {
       prefs.putFloat("offset", cfg.tempOffset);
     });
-    b.ValueFloat("Сдвиг H", &cfg.humOffset, -20.0f, 20.0f, 0.5f, 1, "%", [](float v) {
+    b.Float("Сдвиг H", &cfg.humOffset, -20.0f, 20.0f, 0.5f, 1, "%", [](float v) {
       prefs.putFloat("humOffset", cfg.humOffset);
     });
-    b.ValueFloat("Сдвиг DS", &calDsOffset, -10.0f, 10.0f, 0.01f, 2, "C", [](float v) {
+    b.Float("Сдвиг DS", &calDsOffset, -10.0f, 10.0f, 0.01f, 2, "C", [](float v) {
       prefs.putFloat("dsOffset", calDsOffset);
     });
   }, false);
@@ -1030,17 +1030,17 @@ void buildLcdMenu(gm::Builder& b) {
     activeMenuPage = 3;
     if (WiFi.status() == WL_CONNECTED) {
       String ip = WiFi.localIP().toString();
-      b.ValueStr("IP", ip.c_str());
+      b.ValueText("IP", ip.c_str());
       char rssiBuf[12];
       snprintf(rssiBuf, sizeof(rssiBuf), "%d dBm", WiFi.RSSI());
-      b.ValueStr("Сигнал", rssiBuf);
+      b.ValueText("Сигнал", rssiBuf);
     } else {
-      b.ValueStr("Wi-Fi", "AP:Incubator");
+      b.ValueText("Wi-Fi", "AP:Incubator");
     }
     char uptimeBuf[12];
     uint32_t sec = millis() / 1000;
     snprintf(uptimeBuf, sizeof(uptimeBuf), "%02u:%02u:%02u", sec / 3600, (sec % 3600) / 60, sec % 60);
-    b.ValueStr("Аптайм", uptimeBuf);
+    b.ValueText("Аптайм", uptimeBuf);
   }, false);
 }
 
@@ -1829,10 +1829,12 @@ void setup() {
       printCyrillicChar((uint8_t)str[i]);
     }
   });
-  menu.onCursor([](uint8_t row, bool chosen, bool active) -> uint8_t {
+  menu.onCursor([](uint8_t col, uint8_t row) {
+    lcd.setCursor(col, row);
+  });
+  menu.onState([](uint8_t row, bool chosen, bool active) {
     lcd.setCursor(0, row);
     lcd.write(chosen ? (active ? 0xFF : '>') : ' ');
-    return 1;
   });
   menu.onBuild(buildLcdMenu);
 
